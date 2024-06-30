@@ -1,7 +1,7 @@
 public class Edge {
     private Node startNode;
     private Node endNode;
-    private boolean directed; // Flag to indicate if the edge is directed
+    private boolean directed;
 
     public Edge(Node startNode, Node endNode, boolean directed) {
         this.startNode = startNode;

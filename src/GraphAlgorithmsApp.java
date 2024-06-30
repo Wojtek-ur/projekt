@@ -1,9 +1,6 @@
 import javax.swing.*;
 import java.awt.*;
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.util.List;
 
 public class GraphAlgorithmsApp extends JFrame {
@@ -13,8 +10,9 @@ public class GraphAlgorithmsApp extends JFrame {
 
     public GraphAlgorithmsApp() {
         setTitle("Graph Algorithms App");
-        setSize(800, 600);
+        setSize(1000, 600);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        getContentPane().setBackground(Color.BLUE);
 
         graph = new Graph();
         graphPanel = new GraphPanel(graph);
@@ -31,15 +29,47 @@ public class GraphAlgorithmsApp extends JFrame {
         JButton importButton = new JButton("Import Graph");
         JButton exportButton = new JButton("Export Graph");
         JTextArea resultArea = new JTextArea(10, 30);
+        JTextField addNodeField = new JTextField(10);
+
+
+        JButton addNodeButton = new JButton("Add Node");
+        addNodeButton.addActionListener(e -> {
+            String nodeName = addNodeField.getText().trim();
+            if (!nodeName.isEmpty()) {
+                Node newNode = new Node(nodeName);
+                graph.addNode(newNode);
+                graphPanel.repaint();
+                addNodeField.setText("");
+            }
+        });
 
         addEdgeButton.addActionListener(e -> {
             String startNodeName = JOptionPane.showInputDialog(this, "Enter start node name:");
             String endNodeName = JOptionPane.showInputDialog(this, "Enter end node name:");
-            boolean isDirected = JOptionPane.showConfirmDialog(this, "Is it a directed edge?", "Directed Edge",
-                    JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION;
-            graph.addEdge(startNodeName, endNodeName, isDirected);
-            graphPanel.repaint();
+
+            Node startNode = graph.getNodes().stream()
+                    .filter(n -> n.getName().equals(startNodeName))
+                    .findFirst()
+                    .orElse(null);
+            Node endNode = graph.getNodes().stream()
+                    .filter(n -> n.getName().equals(endNodeName))
+                    .findFirst()
+                    .orElse(null);
+
+            if (startNode != null && endNode != null) {
+                graph.addEdge(startNodeName, endNodeName);
+                graphPanel.repaint();
+            } else {
+                if (startNode == null && endNode == null) {
+                    JOptionPane.showMessageDialog(this, "Both nodes do not exist.");
+                } else if (startNode == null) {
+                    JOptionPane.showMessageDialog(this, "Start node does not exist.");
+                } else {
+                    JOptionPane.showMessageDialog(this, "End node does not exist.");
+                }
+            }
         });
+
 
         deleteEdgeButton.addActionListener(e -> {
             String startNodeName = JOptionPane.showInputDialog(this, "Enter start node name:");
@@ -74,7 +104,9 @@ public class GraphAlgorithmsApp extends JFrame {
                     .findFirst()
                     .orElse(null);
             if (startNode != null) {
-                List<Node> visitedNodes = graph.bfs(startNode);
+                BFSAlgorithm bfsAlgorithm = new BFSAlgorithm(graph);
+                List<Node> visitedNodes = bfsAlgorithm.run(startNode);
+                graphPanel.highlightNodes(visitedNodes);
                 StringBuilder result = new StringBuilder("BFS Traversal: ");
                 for (Node node : visitedNodes) {
                     result.append(node.getName()).append(" ");
@@ -92,7 +124,9 @@ public class GraphAlgorithmsApp extends JFrame {
                     .findFirst()
                     .orElse(null);
             if (startNode != null) {
-                List<Node> visitedNodes = graph.dfs(startNode);
+                DFSAlgorithm dfsAlgorithm = new DFSAlgorithm(graph);
+                List<Node> visitedNodes = dfsAlgorithm.run(startNode);
+                graphPanel.highlightNodes(visitedNodes);
                 StringBuilder result = new StringBuilder("DFS Traversal: ");
                 for (Node node : visitedNodes) {
                     result.append(node.getName()).append(" ");
@@ -129,27 +163,32 @@ public class GraphAlgorithmsApp extends JFrame {
         buttonPanel.add(dfsButton);
         buttonPanel.add(importButton);
         buttonPanel.add(exportButton);
-
         getContentPane().add(buttonPanel, BorderLayout.NORTH);
         getContentPane().add(new JScrollPane(resultArea), BorderLayout.SOUTH);
     }
 
-    private void exportGraph(String filePath) {
-        try (PrintWriter writer = new PrintWriter(filePath)) {
-            // First, write nodes with their positions
-            for (Node node : graph.getNodes()) {
-                Point pos = node.getPosition();
-                if (pos != null) {
-                    writer.println(node.getName() + " " + pos.x + " " + pos.y);
-                } else {
-                    writer.println(node.getName());
-                }
+    private void importGraph(String filePath) {
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                System.out.println(line);
             }
 
-            // Write a separator between nodes and edges
-            writer.println("EDGES");
+            JOptionPane.showMessageDialog(this, "Graph imported from " + filePath);
+            graphPanel.repaint();
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error reading file: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
 
-            // Then, write edges
+    private void exportGraph(String filePath) {
+        try (PrintWriter writer = new PrintWriter(filePath)) {
+            for (Node node : graph.getNodes()) {
+                writer.println(node.getName() + " " + node.getPosition().x + " " + node.getPosition().y);
+            }
+            writer.println("EDGES");
             for (Edge edge : graph.getEdges()) {
                 writer.println(edge.getStartNode().getName() + " " + edge.getEndNode().getName() + " " + edge.isDirected());
             }
@@ -158,68 +197,6 @@ public class GraphAlgorithmsApp extends JFrame {
         } catch (IOException e) {
             JOptionPane.showMessageDialog(this, "Error writing file: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
-    }
-
-    private void importGraph(String filePath) {
-        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
-            String line;
-            boolean readingEdges = false;
-
-            while ((line = reader.readLine()) != null) {
-                if (line.trim().equals("EDGES")) {
-                    readingEdges = true;
-                    continue;
-                }
-
-                if (!readingEdges) {
-                    // Reading nodes with positions
-                    String[] parts = line.trim().split("\\s+");
-                    if (parts.length == 3) {
-                        String nodeName = parts[0];
-                        int x = Integer.parseInt(parts[1]);
-                        int y = Integer.parseInt(parts[2]);
-                        Node node = findOrCreateNode(nodeName, new Point(x, y));
-                    } else if (parts.length == 1) {
-                        String nodeName = parts[0];
-                        Node node = findOrCreateNode(nodeName, null);
-                    } else {
-                        JOptionPane.showMessageDialog(this, "Invalid format in file: " + filePath, "Error", JOptionPane.ERROR_MESSAGE);
-                        return;
-                    }
-                } else {
-                    // Reading edges
-                    String[] parts = line.trim().split("\\s+");
-                    if (parts.length == 3) {
-                        String startNodeName = parts[0];
-                        String endNodeName = parts[1];
-                        boolean isDirected = Boolean.parseBoolean(parts[2]);
-                        graph.addEdge(startNodeName, endNodeName, isDirected);
-                    } else {
-                        JOptionPane.showMessageDialog(this, "Invalid format in file: " + filePath, "Error", JOptionPane.ERROR_MESSAGE);
-                        return;
-                    }
-                }
-            }
-
-            JOptionPane.showMessageDialog(this, "Graph imported from " + filePath);
-            graphPanel.repaint(); // Repaint the graph panel to reflect changes
-        } catch (IOException | NumberFormatException e) {
-            JOptionPane.showMessageDialog(this, "Error reading file: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private Node findOrCreateNode(String nodeName, Point position) {
-        Node existingNode = graph.getNodes().stream()
-                .filter(node -> node.getName().equals(nodeName))
-                .findFirst()
-                .orElse(null);
-
-        if (existingNode == null) {
-            existingNode = new Node(nodeName, position); // Use provided position
-            graph.addNode(existingNode);
-        }
-
-        return existingNode;
     }
 
     public static void main(String[] args) {
